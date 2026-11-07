@@ -109,7 +109,7 @@ export class FixtureBridgeHost implements BridgeHost {
         return this.deny(op, "credential secrets are only available during a host-started login");
       case "getCookie":
       case "getCookies":
-        return this.has("COOKIE_READ") ? value(op === "getCookie" ? this.cookies.get(s(0)) ?? null : Object.fromEntries(this.cookies)) : this.deny(op, "COOKIE_READ not granted");
+        return this.has("COOKIE_STORAGE") && this.has("COOKIE_READ") ? value(op === "getCookie" ? this.cookies.get(s(0)) ?? null : Object.fromEntries(this.cookies)) : this.deny(op, "COOKIE_STORAGE and COOKIE_READ are both required");
       case "setCookie":
         if (!this.has("COOKIE_STORAGE")) return this.deny(op, "COOKIE_STORAGE not declared");
         this.cookies.set(s(0), s(1));

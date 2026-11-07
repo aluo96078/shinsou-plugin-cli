@@ -1,4 +1,4 @@
 [
-  { "name": "rank-page-1", "hook": "getPopularManga", "args": [1], "expect": { "path": "mangas", "minItems": 1, "matches": { "0.title": "範例小說" } } },
-  { "name": "chapter-text", "hook": "getPageList", "args": [{ "url": "/book/1/1.html" }], "expect": { "minItems": 1, "matches": { "0.text": "第一段。\n\n第二段。" } } }
+  {"name": "rank-page-1", "hook": "getPopularManga", "args": [1], "expect": {"path": "mangas", "minItems": 1, "matches": {"0.title": "範例小說"}}},
+  {"name": "chapter-text", "hook": "getChapterText", "args": [{"url": "/book/1/1.html"}], "expect": {"equals": "第一段。\n\n第二段。"}}
 ]

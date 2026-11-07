@@ -27,6 +27,10 @@ export interface TestCase {
     matches?: Record<string, unknown>;
     /** Compare with (or with --update, write) `test/snapshots/<name>.json`. */
     snapshot?: boolean;
+    /** The whole result (or the value at `path`) deep-equals this; handy for `getChapterText` strings. */
+    equals?: unknown;
+    /** The result (a string, or an array/object serialised to JSON) contains this text. */
+    contains?: string;
   };
 }
 
@@ -144,8 +148,19 @@ function at(value: unknown, path?: string): unknown {
   return path.split(".").reduce<unknown>((v, k) => (v && typeof v === "object" ? (v as Record<string, unknown>)[k] : undefined), value);
 }
 
+/** The app accepts a non-empty string (or `{ text }`) of at most 4 MiB from getChapterText. */
+export const MAX_CHAPTER_TEXT_BYTES = 4 * 1024 * 1024;
+function chapterTextProblems(result: unknown): string[] {
+  const text = typeof result === "string" ? result : result && typeof result === "object" ? (result as { text?: unknown }).text : undefined;
+  if (typeof text !== "string") return ["getChapterText must return a string (or { text }); the app ignores anything else"];
+  if (text.length === 0) return ["getChapterText returned an empty string (the app treats it as no text)"];
+  if (Buffer.byteLength(text, "utf8") > MAX_CHAPTER_TEXT_BYTES) return ["getChapterText result exceeds the 4 MiB result limit"];
+  return [];
+}
+
 function checkExpectations(projectDir: string, c: TestCase, result: unknown, update: boolean): string[] {
   const problems: string[] = [];
+  if (c.hook === "getChapterText") problems.push(...chapterTextProblems(result));
   const e = c.expect;
   if (!e) return problems;
   const v = at(result, e.path);
@@ -154,6 +169,10 @@ function checkExpectations(projectDir: string, c: TestCase, result: unknown, upd
   if (e.minItems !== undefined) {
     if (!Array.isArray(v)) problems.push(`${label} is not an array`);
     else if (v.length < e.minItems) problems.push(`${label} has ${v.length} items, expected at least ${e.minItems}`);
+  }
+  if ("equals" in e && !isDeepStrictEqual(v, e.equals)) problems.push(`${label} = ${JSON.stringify(v)}, expected ${JSON.stringify(e.equals)}`);
+  if (e.contains !== undefined && !(typeof v === "string" ? v : JSON.stringify(v) ?? "").includes(e.contains)) {
+    problems.push(`${label} does not contain ${JSON.stringify(e.contains)}`);
   }
   for (const [k, want] of Object.entries(e.matches ?? {})) {
     const got = at(v, k);

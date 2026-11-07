@@ -17,6 +17,12 @@ const BLOCKED_TERMS = [
   "公式", // Japanese 「公式」 = official
 ];
 
+/**
+ * Explicit disclaimers are fine (the app allows them too): they are removed before the blocked
+ * terms are searched, and anything left over still counts ("Unofficial Official" is refused).
+ */
+const DISCLAIMERS = ["unofficial", "unoffical", "nonofficial", "非官方", "非公式"];
+
 const LOOKALIKES: Record<string, string> = { "0": "o", "1": "i", "!": "i", "|": "i", "$": "s", "3": "e", "@": "a" };
 
 export function normalizeForNameCheck(value: string): string {
@@ -29,7 +35,8 @@ export function normalizeForNameCheck(value: string): string {
 
 /** The blocked term [value] contains, or null. */
 export function misleadingTerm(value: string): string | null {
-  const n = normalizeForNameCheck(value);
+  let n = normalizeForNameCheck(value);
+  for (const d of DISCLAIMERS) n = n.split(normalizeForNameCheck(d)).join(" ");
   for (const term of BLOCKED_TERMS) {
     if (n.includes(normalizeForNameCheck(term))) return term;
   }

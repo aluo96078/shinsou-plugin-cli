@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "templates",
+    "data",
     "README.md"
   ],
   "engines": {

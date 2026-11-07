@@ -1,0 +1,6 @@
+[
+  { "name": "manga-popular", "hook": "getPopularManga", "args": [1], "sourceId": "__MANGA_SOURCE_ID__", "expect": { "path": "mangas", "minItems": 2, "matches": { "0.title": "範例漫畫一" } } },
+  { "name": "manga-pages", "hook": "getPageList", "args": [{ "url": "/manga/1/chapter/1" }], "sourceId": "__MANGA_SOURCE_ID__", "expect": { "minItems": 2, "matches": { "0.imageUrl": "https://example.com/img/1.jpg" } } },
+  { "name": "novel-rank", "hook": "getPopularManga", "args": [1], "sourceId": "__NOVEL_SOURCE_ID__", "expect": { "path": "mangas", "minItems": 1, "matches": { "0.title": "範例小說" } } },
+  { "name": "novel-chapter-text", "hook": "getChapterText", "args": [{ "url": "/book/1/1.html" }], "sourceId": "__NOVEL_SOURCE_ID__", "expect": { "equals": "第一段。\n\n第二段。" } }
+]

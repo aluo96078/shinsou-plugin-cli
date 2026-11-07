@@ -21,7 +21,7 @@ export const CAPABILITIES = [
 ] as const;
 export const RUNTIME_PERMISSIONS = [
   "EXECUTE_SCRIPT", "NETWORK", "COOKIE_STORAGE", "CREDENTIAL_ACCESS", "LOGIN_PROMPT", "FAVORITE_MUTATION", "BROWSER_CHALLENGE",
-  // ADR-0002 §5.1: reading cookie values. Not yet a PluginRuntimePermission in the app (see README).
+  // ADR-0002 §5.1: reading cookie values (getCookie/getCookies also need COOKIE_STORAGE in the app).
   "COOKIE_READ",
 ] as const;
 export const HOST_PERMISSIONS = [
@@ -245,8 +245,7 @@ function originFields(s: SourceManifest): JsonObject {
     contentOrigins: [...s.contentOrigins],
     browserSessionOrigins: [...s.browserSessionOrigins],
   };
-  // Not yet a manifest field in the app (PluginNetworkPolicy keeps it reviewed-only): only emitted
-  // when declared, and lint warns about it.
+  // Sensitive (ADR-0002 D11): only emitted when declared; lint validates it like the app does.
   if (s.contentHostSuffixes.length) out.contentHostSuffixes = [...s.contentHostSuffixes];
   return out;
 }

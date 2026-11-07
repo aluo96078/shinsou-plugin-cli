@@ -1,4 +1,8 @@
 import { test } from "node:test";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { dataDir, registrableDomain } from "../src/core/psl.ts";
 import assert from "node:assert/strict";
 import { misleadingTerm } from "../src/core/names.ts";
 import { contentHostSuffixProblem, exactHttpsOriginProblem, usedBridgeOps } from "../src/core/lint.ts";
@@ -56,11 +60,34 @@ test("origins must be exact public HTTPS origins", () => {
   }
 });
 
-test("contentHostSuffixes need at least a registrable domain (PSL hook)", () => {
-  assert.equal(contentHostSuffixProblem("cdn.example.com"), null);
-  assert.equal(contentHostSuffixProblem("example.com"), null);
-  for (const bad of ["com", "co.jp", "github.io", ".example.com", "*.example.com", "Example.com", "1.2.3.4"]) {
-    assert.ok(contentHostSuffixProblem(bad), bad);
+test("contentHostSuffixes follow the app: registrable domain under the full PSL, optional high-port range", () => {
+  for (const ok of ["example.com", "cdn.example.com", "user.github.io", "hath.network", "hath.network:1024-65535", "example.co.jp", "foo.pages.dev"]) {
+    assert.equal(contentHostSuffixProblem(ok), null, ok);
+  }
+  const bad = [
+    "com", "co.jp", "github.io", "pages.dev", "co.uk", "hath.network:1-65535", "hath.network:1024-65534", "hath.network:443",
+    ".example.com", "*.example.com", "Example.com", "example.com.", "1.2.3.4", "localhost", "exa mple.com", "-a.example.com",
+    "例え.jp", "ck", "foo.ck", // *.ck wildcard: foo.ck is a public suffix
+  ];
+  for (const b of bad) assert.ok(contentHostSuffixProblem(b), `should refuse ${b}`);
+  assert.equal(contentHostSuffixProblem("city.kobe.jp"), null); // !city.kobe.jp exception rule
+  assert.ok(contentHostSuffixProblem("foo.kobe.jp")); // *.kobe.jp wildcard
+});
+
+test("the vendored Public Suffix List is the pinned file the app bundles", () => {
+  const bytes = readFileSync(join(dataDir(), "public_suffix_list.dat"));
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), "762b6cbdd2dacc597b398fcd7860e2184b684125a58aa177dbdf54916a1f3430");
+  assert.match(readFileSync(join(dataDir(), "README.md"), "utf8"), /94ec5df7273926560d91e77c002000ba1a53fec4/);
+  assert.equal(registrableDomain("a.b.example.co.uk"), "example.co.uk");
+  assert.equal(registrableDomain("co.uk"), null);
+});
+
+test("explicit disclaimers (Unofficial / 非官方 / 非公式) are allowed, leftovers still count", () => {
+  for (const ok of ["Unofficial Reader", "shinsou_unofficial", "非官方漫畫", "非公式ビューア", "Non-Official Plugins", "ＵＮＯＦＦＩＣＩＡＬ"]) {
+    assert.equal(misleadingTerm(ok), null, ok);
+  }
+  for (const bad of ["Unofficial Official", "非官方 官方", "unofficialofficial", "官方", "Official"]) {
+    assert.ok(misleadingTerm(bad), bad);
   }
 });
 

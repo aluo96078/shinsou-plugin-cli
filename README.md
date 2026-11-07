@@ -61,13 +61,14 @@ shinsou-plugin keygen --name mykey
 ### 2. 建立專案：`init`
 
 ```bash
-shinsou-plugin init my-plugin --template manga   # manga | novel | async
+shinsou-plugin init my-plugin --template manga   # manga | novel | mixed | async
 ```
 
 | 範本 | 內容 |
 |---|---|
 | `manga` | 以 `bridge.httpGet` ＋ `Jsoup` 解析 HTML 的漫畫來源，回傳圖片頁 |
-| `novel` | 小說來源，`getPageList` 回傳 `{ text, content }` 文字頁 |
+| `novel` | 小說來源（`PLAIN_TEXT`）：定義 `getChapterText(chapter)`，直接回傳章節文字字串（上限 4 MiB） |
+| `mixed` | 一個套件兩個來源：漫畫來源（`IMAGE_SEQUENCE`，`getPageList`）＋小說來源（`PLAIN_TEXT`，`getChapterText`），以各來源自己的 `contentKinds` 區分；套件層 `contentType` 為 `both`。`init` 會把產生的 `sourceId` 填進 `var sources = [...]` 的 `id` 與測試案例 |
 | `async` | JSON API 來源：`async` hook、非阻塞的 `bridge.net.fetch`、多檔 ES module（打包成單一腳本） |
 
 產生的檔案：
@@ -165,8 +166,14 @@ shinsou-plugin lint
   `credentialOrigins` 必須也在 `requestOrigins` 內；宣告 `NETWORK` 但 `requestOrigins` 是空的也算錯
   （App 會拒絕所有請求）。
 - **腳本 ≤ 2 MiB**、`sourceId` 是 64-bit 整數字串、`REPORT_USER_MESSAGE` 等 tier ceiling 權限不能申請。
-- `contentHostSuffixes` 至少要到可註冊網域（`cdn.example.com`、`example.com` 可以；`com`、`co.jp`、`github.io` 不行）。
-  目前只用內建的常見 public suffix 清單，**完整 Public Suffix List 的檢查是 TODO**（`src/core/lint.ts` 的 `isPublicSuffix`）。
+- `contentHostSuffixes` 規則與 App 相同：小寫 ASCII、不含前後的點、不是 IP，且依**完整 Public Suffix List**
+  必須是可註冊網域（`cdn.example.com`、`example.com`、`user.github.io` 可以；`com`、`co.jp`、`github.io` 不行）。
+  可在後面加上剛好是 `:1024-65535` 的後綴（例如 `hath.network:1024-65535`）以允許非特權連接埠，其他連接埠寫法一律拒絕；
+  每個來源最多 8 個。清單固定版本放在 `data/public_suffix_list.dat`（與 App 內建的同一份，來源 commit 與 SHA-256 見 `data/README.md`）。
+- `getCookie`/`getCookies` 需要同時宣告 `COOKIE_STORAGE` 與 `COOKIE_READ`（App 已實作）。
+- 名稱可使用明確的否認字樣（`Unofficial`、`非官方`、`非公式`）；移除這些字樣後仍含有 official／官方／公式 的名稱照樣被拒絕。
+- `PLAIN_TEXT` 來源應定義 `getChapterText`；`shinsou-plugin test` 對 `getChapterText` 的測試案例會檢查回傳是非空字串（或 `{ text }`）且不超過 4 MiB，
+  並可用 `expect.equals`／`expect.contains` 比對文字。
 
 警告：宣告了卻沒用到的權限（最小權限）、宣告了 capability 卻找不到對應 hook、腳本中出現未宣告的網址等。
 
@@ -213,7 +220,7 @@ shinsou-plugin serve --host 192.168.1.20 --port 9000
 - 提供 `build/repo/` 的**未簽章**開發者儲存庫，檔案一改就自動重建（失敗時繼續提供上一個成功的版本）。
 - 只接受 `127.0.0.1`、`::1` 或**這台電腦**的私有區域網路位址（10/8、172.16/12、192.168/16）；拒絕 `0.0.0.0` 與公開 IP。
 - 印出 `shinsou://add-dev-repository?url=…` 連結與終端機 QR code，用手機掃描即可加入。
-- App 必須開啟「設定 → 套件開發者模式」才會載入；開發中的套件只在沙箱執行、標示「開發中」，不能取得額外放寬。
+- App 已能處理這個連結（`shinsou://add-dev-repository?url=…`）：開啟「設定 → 套件開發者模式」且位址是允許的開發伺服器位址時才會加入；開發中的套件只在沙箱執行、標示「開發中」，不能取得額外放寬。
 - `GET /__shinsou-dev/status` 回傳目前的 build revision 與 SHA-256，可用來判斷是否需要重新載入。
 
 ### 7. 簽章：`sign`
@@ -297,8 +304,7 @@ npm run typecheck && npm run build   # 輸出 dist/cli.js
 
 ## 已知限制
 
-- `contentHostSuffixes`：App 目前只接受審查過的內建後綴，尚未接受第三方 manifest 宣告；lint 會警告。
-  完整 Public Suffix List 檢查尚未實作。
-- `COOKIE_READ`（讀取 Cookie 值）是 ADR-0002 規劃的新權限，App 目前還沒有；使用 `getCookie`/`getCookies` 的套件會被拒絕。
+- `contentHostSuffixes` 與 `COOKIE_READ` 已由 App 支援；內建的 Public Suffix List 是固定版本，與 App 版本不同步時
+  （App 更新清單後），某個後綴可能在新版變成公開後綴而被 App 拒絕安裝；更新時請同步替換 `data/public_suffix_list.dat`。
 - 一個專案只產生一個套件；同一發佈者的多個套件目前要分開的儲存庫（或自行合併 index）。
 - 授權條款尚未決定（`package.json` 暫為 `UNLICENSED`），發佈到 npm 前需要決定。

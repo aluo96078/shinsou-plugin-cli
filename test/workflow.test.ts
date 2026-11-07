@@ -19,7 +19,7 @@ import type { JsonObject } from "../src/core/canonical-json.ts";
 const tmp = () => mkdtempSync(join(tmpdir(), "shinsou-plugin-test-"));
 const key = (name: string) => unlockKeyFile(createKeyFile({ name }));
 
-for (const template of ["manga", "novel", "async"] as const) {
+for (const template of ["manga", "novel", "mixed", "async"] as const) {
   test(`template ${template}: build, lint and hook tests pass`, async () => {
     const dir = join(tmp(), `${template}-plugin`);
     initProject({ dir, template, cliVersion: "0.1.0" });
@@ -185,4 +185,58 @@ test("sign / revoke / refresh / rotate / revoke-key produce envelopes the app ac
   assert.deepEqual(revoked, { publisherId: a.fingerprint, revokedKeyFingerprint: b.fingerprint });
   assert.equal(loadState(dir).keyRevoked, true);
   await assert.rejects(signRepository({ projectDir: dir, key: b, mirrors }), /revoked/);
+});
+
+test("mixed template: one package, manga IMAGE_SEQUENCE source + novel PLAIN_TEXT source", async () => {
+  const dir = join(tmp(), "mixed-plugin");
+  initProject({ dir, template: "mixed", cliVersion: "0.1.0" });
+  const built = await buildProject(dir);
+  const [manga, novel] = built.manifest.sources;
+  assert.equal(built.manifest.contentType, "both");
+  assert.deepEqual(built.manifest.contentKinds, ["IMAGE_SEQUENCE", "PLAIN_TEXT"]);
+  assert.deepEqual(manga.contentKinds, ["IMAGE_SEQUENCE"]);
+  assert.deepEqual(novel.contentKinds, ["PLAIN_TEXT"]);
+  assert.ok(built.script.includes(`id: "${manga.sourceId}"`) && built.script.includes(`id: "${novel.sourceId}"`));
+  const report = lintBuild(built);
+  assert.deepEqual(report.errors, []);
+  assert.deepEqual(report.warnings, []);
+  const results = await runTests({ projectDir: dir, manifest: built.manifest, script: built.script });
+  assert.deepEqual(results.map((r) => r.name), ["manga-popular", "manga-pages", "novel-rank", "novel-chapter-text"]);
+  for (const r of results) assert.ok(r.ok, `${r.name}: ${r.problems.join("; ")}`);
+  assert.equal(results[3].value, "第一段。\n\n第二段。");
+});
+
+test("test runner checks getChapterText returns a non-empty string", async () => {
+  const dir = join(tmp(), "text-shape");
+  initProject({ dir, template: "novel", cliVersion: "0.1.0" });
+  const src = join(dir, "src", "index.js");
+  writeFileSync(src, readFileSync(src, "utf8").replace('return paragraphs.join("\\n\\n");', "return paragraphs.map(function (p) { return { index: 0 }; });"));
+  const built = await buildProject(dir);
+  const results = await runTests({ projectDir: dir, manifest: built.manifest, script: built.script, only: "chapter-text" });
+  assert.equal(results.length, 1);
+  assert.ok(!results[0].ok);
+  assert.match(results[0].problems.join("\n"), /getChapterText must return a string/);
+});
+
+test("lint: COOKIE_READ and contentHostSuffixes are supported, validated like the app", async () => {
+  const dir = join(tmp(), "cookie-suffix");
+  initProject({ dir, template: "manga", cliVersion: "0.1.0" });
+  editManifest(dir, (m) => {
+    m.runtimePermissions = ["EXECUTE_SCRIPT", "NETWORK", "COOKIE_STORAGE", "COOKIE_READ"];
+    (m.sources as JsonObject[])[0].contentHostSuffixes = ["hath.network:1024-65535", "example.com"];
+  });
+  const src = join(dir, "src", "index.js");
+  writeFileSync(src, readFileSync(src, "utf8") + "\nfunction c(){ return bridge.getCookie('a', 'https://example.com'); }\n");
+  let report = lintBuild(await buildProject(dir, { write: false }));
+  assert.deepEqual(report.errors, []);
+  assert.ok(!report.warnings.some((w) => w.rule === "app-support"), JSON.stringify(report.warnings));
+  editManifest(dir, (m) => {
+    m.runtimePermissions = ["EXECUTE_SCRIPT", "NETWORK", "COOKIE_READ"];
+    (m.sources as JsonObject[])[0].contentHostSuffixes = ["github.io", "hath.network:1-65535"];
+  });
+  report = lintBuild(await buildProject(dir, { write: false }));
+  const text = report.errors.map((e) => e.message).join("\n");
+  assert.match(text, /getCookie\(\) requires runtime permission COOKIE_STORAGE/);
+  assert.match(text, /github\.io: is a public suffix/);
+  assert.match(text, /hath\.network:1-65535/);
 });

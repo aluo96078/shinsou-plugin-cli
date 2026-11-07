@@ -1,4 +1,6 @@
-// Novel source template: getPageList returns text pages ({ text, content }) instead of images.
+// Novel source template. A PLAIN_TEXT source is a text source when the script defines
+// getChapterText(chapter) returning the chapter text as one string (up to 4 MiB).
+// `var source` must stay a top-level declaration: the host looks it up by name.
 
 var BASE = "https://example.com";
 
@@ -53,10 +55,10 @@ var source = {
     });
   },
 
-  getPageList: function (chapter) {
+  // Returns the chapter text itself: paragraphs separated by a blank line.
+  getChapterText: function (chapter) {
     var doc = Jsoup.parse(bridge.httpGet(absolute(chapter.url)) || "", BASE);
     var paragraphs = doc.select(".content p").map(function (p) { return p.text(); });
-    var text = paragraphs.join("\n\n");
-    return [{ index: 0, url: chapter.url, imageUrl: null, text: text, content: text }];
+    return paragraphs.join("\n\n");
   }
 };

@@ -25,7 +25,7 @@ const HELP = `shinsou-plugin ${VERSION} — Shinsou X 套件作者工具
 
   keygen [--name <名稱>] [--passphrase]     產生 Ed25519 發佈者金鑰
   fingerprint [--key <名稱>]                顯示金鑰指紋
-  init [目錄] [--template manga|novel|async] [--id <packageId>] [--name <名稱>] [--lang <語言>]
+  init [目錄] [--template manga|novel|mixed|async] [--id <packageId>] [--name <名稱>] [--lang <語言>]
   build                                     打包腳本並產生 index.json 與 sidecar
   lint                                      權限、origin、名稱與大小檢查
   test [--record] [--update] [--only <名稱>] 以錄製的 HTTP fixture 執行 hook

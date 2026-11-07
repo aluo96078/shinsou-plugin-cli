@@ -7,6 +7,7 @@ import type { BuildResult } from "./build.ts";
 import { MAX_SCRIPT_BYTES } from "./build.ts";
 import { TIER_CEILING_HOST_PERMISSIONS, type PluginManifest, type SourceManifest } from "./manifest.ts";
 import { misleadingTerm } from "./names.ts";
+import { registrableDomain } from "./psl.ts";
 
 export interface Finding {
   rule: string;
@@ -38,8 +39,8 @@ export const BRIDGE_OPS: Record<string, OpRule> = {
   getCredentialPassword: { runtime: ["CREDENTIAL_ACCESS"] },
   setCredential: { runtime: ["CREDENTIAL_ACCESS"] },
   clearCredential: { runtime: ["CREDENTIAL_ACCESS"] },
-  getCookie: { runtime: ["COOKIE_READ"] },
-  getCookies: { runtime: ["COOKIE_READ"] },
+  getCookie: { runtime: ["COOKIE_STORAGE", "COOKIE_READ"] },
+  getCookies: { runtime: ["COOKIE_STORAGE", "COOKIE_READ"] },
   setCookie: { runtime: ["COOKIE_STORAGE"] },
   deleteCookie: { runtime: ["COOKIE_STORAGE"] },
   clearCookies: { runtime: ["COOKIE_STORAGE"] },
@@ -132,9 +133,6 @@ export function lintBuild(result: BuildResult): LintReport {
     if (op === "system.submit" || op === "requestHostEvent") {
       warn("bridge-dynamic", `bridge.${op}() submits arbitrary events: make sure systemEvents and requestedHostPermissions cover them`);
     }
-    if (rule.runtime?.includes("COOKIE_READ")) {
-      warn("app-support", "COOKIE_READ (ADR-0002 §5.1) is not yet a runtime permission in the current app; cookie reads will be denied");
-    }
   }
   if (/\bbridge\s*\[/.test(code)) warn("bridge-dynamic", "bridge[...] dynamic access cannot be checked statically");
   for (const p of m.runtimePermissions) {
@@ -155,12 +153,20 @@ export function lintBuild(result: BuildResult): LintReport {
   // Capabilities ↔ hooks.
   for (const cap of m.capabilities) {
     const hook = CAPABILITY_HOOKS[cap];
-    if (hook && !new RegExp(`\\b${hook}\\b`).test(code)) warn("capabilities", `capability ${cap} is declared but no ${hook} hook was found`);
+    const found = (h: string) => new RegExp(`\\b${h}\\b`).test(code);
+    // CONTENT is served by getPageList (images) or getChapterText (PLAIN_TEXT sources).
+    if (hook && !found(hook) && !(cap === "CONTENT" && found("getChapterText"))) warn("capabilities", `capability ${cap} is declared but no ${hook} hook was found`);
   }
   if (m.capabilities.includes("LOGIN") && !m.runtimePermissions.includes("CREDENTIAL_ACCESS")) {
     warn("capabilities", "LOGIN normally needs CREDENTIAL_ACCESS to store the account");
   }
 
+  for (const [i, s] of m.sources.entries()) {
+    const kinds = s.contentKinds ?? m.contentKinds;
+    if (kinds.includes("PLAIN_TEXT") && !/\bgetChapterText\b/.test(code)) {
+      warn("capabilities", `sources[${i}] serves PLAIN_TEXT but no getChapterText hook was found (the app reads chapter text from getChapterText(chapter), which returns a string)`);
+    }
+  }
   for (const [i, s] of m.sources.entries()) lintSource(m, s, `sources[${i}]`, code, err, warn);
   lintUrlLiterals(m, code, warn);
   return report;
@@ -210,11 +216,8 @@ function lintSource(
     const problem = contentHostSuffixProblem(suffix);
     if (problem) err("content-host-suffix", `${label}.contentHostSuffixes ${suffix}: ${problem}`);
   }
-  if (s.contentHostSuffixes.length) {
-    warn(
-      "app-support",
-      `${label}.contentHostSuffixes is a sensitive permission (ADR-0002 D11) that the current app does not yet accept from third-party manifests`,
-    );
+  if (s.contentHostSuffixes.length > MAX_CONTENT_HOST_SUFFIXES) {
+    err("content-host-suffix", `${label}.contentHostSuffixes allows at most ${MAX_CONTENT_HOST_SUFFIXES} entries`);
   }
 }
 
@@ -256,31 +259,25 @@ export function exactHttpsOriginProblem(origin: string): string | null {
   return null;
 }
 
-/**
- * Minimal public-suffix guard for `contentHostSuffixes`.
- * TODO(PSL): replace with the full Mozilla Public Suffix List (bundled, periodically updated), the
- * same list the app must adopt for D11 (ADR-0002 §6.2, §12 S6). Until then this list only catches
- * the most common mistakes and lint cannot prove a suffix is at least a registrable domain.
- */
-const KNOWN_PUBLIC_SUFFIXES = new Set([
-  "com", "net", "org", "io", "co", "me", "app", "dev", "info", "biz", "xyz", "top", "cc", "tv", "jp", "cn", "tw", "hk", "kr",
-  "co.jp", "ne.jp", "or.jp", "com.cn", "net.cn", "com.tw", "net.tw", "org.tw", "com.hk", "co.kr", "co.uk", "org.uk", "com.au",
-  "github.io", "gitlab.io", "pages.dev", "workers.dev", "netlify.app", "vercel.app", "herokuapp.com", "appspot.com",
-  "cloudfront.net", "azurewebsites.net", "blogspot.com", "firebaseapp.com", "web.app", "r2.dev", "b-cdn.net",
-]);
+/** Appended to a declared suffix, allows the non-privileged port range too (like the app). */
+export const CONTENT_HOST_SUFFIX_HIGH_PORTS = ":1024-65535";
+/** Most `contentHostSuffixes` one source may declare (app: MAX_CONTENT_HOST_SUFFIXES). */
+export const MAX_CONTENT_HOST_SUFFIXES = 8;
 
-export function isPublicSuffix(suffix: string): boolean {
-  return KNOWN_PUBLIC_SUFFIXES.has(suffix.toLowerCase());
-}
-
-export function contentHostSuffixProblem(suffix: string): string | null {
-  const s = suffix.toLowerCase();
-  if (s !== suffix) return "must be lower-case";
+/** Null when the app grants [declared] (`isGrantableContentHostSuffix`), else why not. */
+export function contentHostSuffixProblem(declared: string): string | null {
+  const s = declared.endsWith(CONTENT_HOST_SUFFIX_HIGH_PORTS) ? declared.slice(0, -CONTENT_HOST_SUFFIX_HIGH_PORTS.length) : declared;
+  if (s !== s.toLowerCase()) return "must be lower-case";
   if (s.startsWith(".") || s.startsWith("*")) return "write the bare suffix (example.com), without a leading dot or wildcard";
-  if (!/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(s)) {
+  if (s.endsWith(".")) return "must not end with a dot";
+  if (s.length > 253 || !/^[a-z0-9.-]+$/.test(s)) {
+    return `must be lower-case ASCII host name characters; the only allowed port suffix is ${CONTENT_HOST_SUFFIX_HIGH_PORTS}`;
+  }
+  const labels = s.split(".");
+  if (labels.length < 2 || labels.some((l) => !l || l.length > 63 || l.startsWith("-") || l.endsWith("-"))) {
     return "is not a valid host name with at least two labels";
   }
-  if (isIP(s)) return "must not be an IP address";
-  if (isPublicSuffix(s)) return "is a public suffix; it must be at least a registrable domain (e.g. cdn.example.com)";
+  if (/^\d+$/.test(labels[labels.length - 1]) || isIP(s)) return "must not be an IP address";
+  if (registrableDomain(s) === null) return "is a public suffix; it must be at least a registrable domain (e.g. cdn.example.com)";
   return null;
 }
