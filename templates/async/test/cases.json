@@ -1,0 +1,4 @@
+[
+  { "name": "popular-page-1", "hook": "getPopularManga", "args": [1], "expect": { "path": "mangas", "minItems": 1, "matches": { "0.title": "Async Sample", "0.url": "42" } } },
+  { "name": "pages", "hook": "getPageList", "args": [{ "url": "c1" }], "expect": { "minItems": 2 } }
+]

@@ -1,0 +1,3 @@
+node_modules/
+build/
+# public/ holds the signed repository you publish; commit it if you publish from this repo.

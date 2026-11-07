@@ -1,0 +1,10 @@
+[
+  {
+    "request": { "method": "GET", "url": "https://api.example.com/titles?sort=popular&page=1" },
+    "response": { "status": 200, "headers": { "content-type": "application/json" }, "body": "{\"items\":[{\"id\":42,\"title\":\"Async Sample\",\"cover\":\"https://cdn.example.com/42.jpg\"}],\"hasNext\":false}" }
+  },
+  {
+    "request": { "method": "GET", "url": "https://api.example.com/chapters/c1/pages" },
+    "response": { "status": 200, "body": "{\"pages\":[\"https://cdn.example.com/c1/1.jpg\",\"https://cdn.example.com/c1/2.jpg\"]}" }
+  }
+]

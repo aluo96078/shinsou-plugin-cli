@@ -1,0 +1,10 @@
+[
+  {
+    "request": { "method": "GET", "url": "https://example.com/rank?page=1" },
+    "response": { "status": 200, "body": "<div class=\"book\"><a href=\"/book/1\">範例小說</a><span class=\"author\">作者</span></div>" }
+  },
+  {
+    "request": { "method": "GET", "url": "https://example.com/book/1/1.html" },
+    "response": { "status": 200, "body": "<div class=\"content\"><p>第一段。</p><p>第二段。</p></div>" }
+  }
+]

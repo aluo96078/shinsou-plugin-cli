@@ -1,0 +1,18 @@
+[
+  {
+    "request": { "method": "GET", "url": "https://example.com/popular?page=1" },
+    "response": {
+      "status": 200,
+      "headers": { "content-type": "text/html; charset=utf-8" },
+      "body": "<div class=\"manga-item\"><a href=\"/manga/1\"><img src=\"/cover/1.jpg\"><span class=\"title\">範例漫畫一</span></a></div><div class=\"manga-item\"><a href=\"/manga/2\"><img src=\"/cover/2.jpg\"><span class=\"title\">Sample Two</span></a></div><a class=\"next\" href=\"?page=2\">next</a>"
+    }
+  },
+  {
+    "request": { "method": "GET", "url": "https://example.com/manga/1" },
+    "response": { "status": 200, "body": "<p class=\"description\">A sample.</p><p class=\"author\">Someone</p><div class=\"chapter-list\"><a href=\"/manga/1/chapter/1\">Chapter 1</a><a href=\"/manga/1/chapter/2\">Chapter 2</a></div>" }
+  },
+  {
+    "request": { "method": "GET", "url": "https://example.com/manga/1/chapter/1" },
+    "response": { "status": 200, "body": "<div class=\"page-img\"><img data-src=\"/img/1.jpg\"><img data-src=\"/img/2.jpg\"></div>" }
+  }
+]

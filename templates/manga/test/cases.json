@@ -1,0 +1,10 @@
+[
+  { "name": "popular-page-1", "hook": "getPopularManga", "args": [1], "expect": { "path": "mangas", "minItems": 2, "snapshot": true } },
+  {
+    "name": "chapters",
+    "hook": "getChapterList",
+    "args": [{ "url": "/manga/1", "title": "Sample" }],
+    "expect": { "minItems": 2, "matches": { "0": { "url": "/manga/1/chapter/1", "name": "Chapter 1", "scanlator": null, "dateUpload": 0, "chapterNumber": -1 } } }
+  },
+  { "name": "pages", "hook": "getPageList", "args": [{ "url": "/manga/1/chapter/1" }], "expect": { "minItems": 2, "matches": { "0.imageUrl": "https://example.com/img/1.jpg" } } }
+]

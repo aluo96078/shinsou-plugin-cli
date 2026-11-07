@@ -1,0 +1,42 @@
+# Re-signs publisher-revocations.json before it expires (default lifetime: 30 days).
+# The app refuses new installs and updates from a publisher whose revocations have expired
+# (ADR-0002 D8), so this must keep running.
+#
+# Secrets:
+#   SHINSOU_PLUGIN_KEY         the full JSON of ~/.config/shinsou-plugin/keys/<name>.json
+#   SHINSOU_PLUGIN_PASSPHRASE  its passphrase (only if the key is encrypted)
+name: Refresh Shinsou revocations
+
+on:
+  schedule:
+    - cron: "17 3 * * 1" # every Monday 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shinsou-sign
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Re-sign revocations
+        env:
+          SHINSOU_PLUGIN_KEY: ${{ secrets.SHINSOU_PLUGIN_KEY }}
+          SHINSOU_PLUGIN_PASSPHRASE: ${{ secrets.SHINSOU_PLUGIN_PASSPHRASE }}
+        run: npx shinsou-plugin refresh --key "$(node -p 'JSON.parse(process.env.SHINSOU_PLUGIN_KEY).name')"
+      - name: Commit the new signature and sequence
+        run: |
+          git config user.name "shinsou-refresh"
+          git config user.email "shinsou-refresh@users.noreply.github.com"
+          git add .shinsou/state.json public
+          git diff --cached --quiet || git commit -m "chore: refresh publisher revocations"
+          git push

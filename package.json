@@ -1,0 +1,40 @@
+{
+  "name": "@shinsou/plugin",
+  "version": "0.1.0",
+  "description": "Shinsou X 套件作者工具：金鑰、建置、檢查、測試、開發伺服器與簽章發佈。",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": {
+    "shinsou-plugin": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.4.0",
+    "@noble/ed25519": "^3.2.0",
+    "@noble/hashes": "^2.4.0",
+    "esbuild": "^0.28.2",
+    "node-html-parser": "^9.0.7",
+    "qrcode-terminal": "^0.12.0",
+    "quickjs-emscripten": "^0.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/qrcode-terminal": "^0.12.2",
+    "cbor-x": "^1.6.9",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.0"
+  }
+}
