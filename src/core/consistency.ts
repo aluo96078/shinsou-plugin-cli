@@ -130,10 +130,8 @@ export function checkPackageConsistency(args: {
   const events = (pkg.systemEvents ?? {}) as JsonObject;
   const declared = [...((events.required as string[]) ?? []), ...((events.optional as string[]) ?? [])];
   if (declared.includes("command.auth.login.request")) {
-    expect(/bridge\.system\.requestLogin\s*\(/.test(scriptText), `${id} must use the native system login helper`);
-    const systemCall = scriptText.indexOf("bridge.system.requestLogin");
-    const legacyCall = scriptText.indexOf("bridge.requestLogin");
-    expect(legacyCall < 0 || systemCall < legacyCall, `${id} legacy login callback may only be a fallback`);
+    // The app's sandbox offers bridge.requestLogin; bridge.system.requestLogin may only be a feature-detected extra.
+    expect(/bridge\.(?:system\.)?requestLogin\s*\(/.test(scriptText), `${id} declares login but never asks the app to show it (bridge.requestLogin)`);
   }
   const caps = (pkg.capabilities as string[]) ?? [];
   if (/supportsLogin\s*:\s*true/.test(scriptText)) expect(caps.includes("LOGIN"), `${id} script supports login but LOGIN capability is not declared`);
