@@ -116,7 +116,7 @@ export function checkPackageConsistency(args: {
     const key = (match.sourceKey ?? {}) as JsonObject;
     expect(key.packageId === pkg.id && key.sourceId === s.sourceId && key.contractVersion === 2, `${id} sourceKey binding`);
     expect(key.legacyLongId === s.legacyLongId, `${id} sourceKey legacyLongId`);
-    for (const field of ["name", "lang", "baseUrl", "requestOrigins", "credentialOrigins", "contentOrigins", "browserSessionOrigins", "contentHostSuffixes"]) {
+    for (const field of ["name", "lang", "baseUrl", "requestOrigins", "credentialOrigins", "contentOrigins", "browserSessionOrigins", "browserImageOrigins", "contentHostSuffixes"]) {
       same(match[field] ?? null, s[field] ?? null, `${id} source ${String(s.sourceId)} ${field} binding`);
     }
     expect("contentKinds" in match, `${id} sidecar source contentKinds must be explicit`);

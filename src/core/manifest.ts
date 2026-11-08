@@ -23,6 +23,8 @@ export const RUNTIME_PERMISSIONS = [
   "EXECUTE_SCRIPT", "NETWORK", "COOKIE_STORAGE", "CREDENTIAL_ACCESS", "LOGIN_PROMPT", "FAVORITE_MUTATION", "BROWSER_CHALLENGE",
   // ADR-0002 §5.1: reading cookie values (getCookie/getCookies also need COOKIE_STORAGE in the app).
   "COOKIE_READ",
+  // Loading the source's browserImageOrigins in an isolated browser (macOS/iOS).
+  "BROWSER_IMAGES",
 ] as const;
 export const HOST_PERMISSIONS = [
   "REQUEST_LOGIN_UI", "REQUEST_SOURCE_REFRESH", "REQUEST_LOGOUT", "REPORT_DIAGNOSTIC", "REPORT_USER_MESSAGE", "REQUEST_BROWSER_CHALLENGE",
@@ -50,6 +52,8 @@ export interface SourceManifest {
   browserSessionOrigins: string[];
   /** ADR-0002 §6.2 / D11: sensitive dynamic CDN suffixes (content plane only). */
   contentHostSuffixes: string[];
+  /** Exact HTTPS content origins (port 443) whose images the app may load in an isolated browser (BROWSER_IMAGES). */
+  browserImageOrigins: string[];
 }
 
 export interface RepositoryManifest {
@@ -149,6 +153,7 @@ export function validateManifest(raw: JsonValue): PluginManifest {
       contentOrigins: strList(so.contentOrigins, `${label}.contentOrigins`),
       browserSessionOrigins: strList(so.browserSessionOrigins, `${label}.browserSessionOrigins`),
       contentHostSuffixes: strList(so.contentHostSuffixes, `${label}.contentHostSuffixes`),
+      browserImageOrigins: strList(so.browserImageOrigins, `${label}.browserImageOrigins`),
     };
     if (so.contentType !== undefined) source.contentType = str(so.contentType, `${label}.contentType`);
     if (so.contentKinds !== undefined) source.contentKinds = strList(so.contentKinds, `${label}.contentKinds`, CONTENT_KINDS);
@@ -247,6 +252,7 @@ function originFields(s: SourceManifest): JsonObject {
   };
   // Sensitive (ADR-0002 D11): only emitted when declared; lint validates it like the app does.
   if (s.contentHostSuffixes.length) out.contentHostSuffixes = [...s.contentHostSuffixes];
+  if (s.browserImageOrigins.length) out.browserImageOrigins = [...s.browserImageOrigins];
   return out;
 }
 

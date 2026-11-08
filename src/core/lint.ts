@@ -180,10 +180,18 @@ function lintSource(
   err: (r: string, msg: string) => void,
   warn: (r: string, msg: string) => void,
 ) {
-  if (!/^\d{1,19}$/.test(s.sourceId) || BigInt(s.sourceId) > 0x7fffffffffffffffn) {
-    err("source-id", `${label}.sourceId must be a decimal 64-bit integer string (the app stores it as a Long)`);
+  const isLong = (v: string) => /^-?\d{1,19}$/.test(v) && BigInt(v) <= 0x7fffffffffffffffn && BigInt(v) >= -0x8000000000000000n;
+  if (/^\d{1,19}$/.test(s.sourceId)) {
+    if (!isLong(s.sourceId)) err("source-id", `${label}.sourceId must fit a 64-bit integer (the app stores it as a Long)`);
+    if (s.legacyLongId !== null && s.legacyLongId !== s.sourceId) warn("source-id", `${label}.legacyLongId differs from sourceId`);
+  } else if (/^[a-z0-9][a-z0-9._-]{0,127}$/.test(s.sourceId)) {
+    // A string id keeps an existing library identity; the app then uses legacyLongId as the engine/storage id.
+    if (s.legacyLongId === null || !isLong(s.legacyLongId)) {
+      err("source-id", `${label}.sourceId "${s.sourceId}" is not numeric, so legacyLongId must be a 64-bit integer string`);
+    }
+  } else {
+    err("source-id", `${label}.sourceId must be a decimal 64-bit integer or a lowercase dotted id such as zh.example`);
   }
-  if (s.legacyLongId !== null && s.legacyLongId !== s.sourceId) warn("source-id", `${label}.legacyLongId differs from sourceId`);
   for (const field of ["requestOrigins", "credentialOrigins", "contentOrigins", "browserSessionOrigins"] as const) {
     for (const origin of s[field]) {
       const problem = exactHttpsOriginProblem(origin);
@@ -218,6 +226,20 @@ function lintSource(
   }
   if (s.contentHostSuffixes.length > MAX_CONTENT_HOST_SUFFIXES) {
     err("content-host-suffix", `${label}.contentHostSuffixes allows at most ${MAX_CONTENT_HOST_SUFFIXES} entries`);
+  }
+  // Same rules as the app's SourceIndexEntry: exact HTTPS origins on port 443, also content origins, at most 4.
+  if (s.browserImageOrigins.length > 4) err("origin", `${label}.browserImageOrigins allows at most 4 origins`);
+  for (const origin of s.browserImageOrigins) {
+    const problem = exactHttpsOriginProblem(origin);
+    if (problem) err("origin", `${label}.browserImageOrigins: ${origin} ${problem}`);
+    else if (/:\d+$/.test(origin)) err("origin", `${label}.browserImageOrigins: ${origin} must use the default port 443`);
+    if (!s.contentOrigins.includes(origin)) err("origin", `${label}.browserImageOrigins ${origin} must also be a content origin`);
+  }
+  if (s.browserImageOrigins.length && !m.runtimePermissions.includes("BROWSER_IMAGES")) {
+    err("origin", `${label}.browserImageOrigins needs runtime permission BROWSER_IMAGES`);
+  }
+  if (/\bsetFavorite\s*[:=(]/.test(code) && !m.runtimePermissions.includes("FAVORITE_MUTATION")) {
+    warn("permission", `${label}: setFavorite is defined but FAVORITE_MUTATION is not requested, so the app will refuse it`);
   }
 }
 

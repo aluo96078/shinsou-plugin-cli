@@ -240,3 +240,36 @@ test("lint: COOKIE_READ and contentHostSuffixes are supported, validated like th
   assert.match(text, /github\.io: is a public suffix/);
   assert.match(text, /hath\.network:1-65535/);
 });
+
+test("lint: browserImageOrigins, string sourceId and setFavorite follow the app's rules", async () => {
+  const dir = join(tmp(), "images-favorites");
+  initProject({ dir, template: "novel", cliVersion: "0.1.0" });
+  editManifest(dir, (m) => {
+    m.runtimePermissions = ["EXECUTE_SCRIPT", "NETWORK", "BROWSER_IMAGES", "FAVORITE_MUTATION"];
+    const s = (m.sources as JsonObject[])[0];
+    s.sourceId = "zh.wenku8";
+    s.legacyLongId = "-9110000000000001";
+    s.contentOrigins = [...(s.contentOrigins as string[]), "https://i.cdn-example.com"];
+    s.browserImageOrigins = ["https://i.cdn-example.com"];
+  });
+  const src = join(dir, "src", "index.js");
+  writeFileSync(src, readFileSync(src, "utf8") + "\nsource.setFavorite = function (manga, favorite) { return true; };\n");
+  let built = await buildProject(dir, { write: false });
+  let report = lintBuild(built);
+  assert.deepEqual(report.errors, []);
+  assert.deepEqual((built.pkg.sources as JsonObject[])[0].browserImageOrigins, ["https://i.cdn-example.com"]);
+
+  editManifest(dir, (m) => {
+    m.runtimePermissions = ["EXECUTE_SCRIPT", "NETWORK"];
+    const s = (m.sources as JsonObject[])[0];
+    s.legacyLongId = null;
+    s.browserImageOrigins = ["https://other.example.com", "https://i.cdn-example.com:8443"];
+  });
+  report = lintBuild(await buildProject(dir, { write: false }));
+  const text = report.errors.map((e) => e.message).join("\n");
+  assert.match(text, /legacyLongId must be a 64-bit integer string/);
+  assert.match(text, /other\.example\.com must also be a content origin/);
+  assert.match(text, /must use the default port 443/);
+  assert.match(text, /needs runtime permission BROWSER_IMAGES/);
+  assert.ok(report.warnings.some((w) => /FAVORITE_MUTATION/.test(w.message)), JSON.stringify(report.warnings));
+});
