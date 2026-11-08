@@ -8,7 +8,7 @@ import qrcode from "qrcode-terminal";
 import { buildProject } from "./core/build.ts";
 import { createKeyFile, describeKey, keyPath, readKeyFile, saveKeyFile, unlockKeyFile, type LoadedKey } from "./core/keystore.ts";
 import { lintBuild } from "./core/lint.ts";
-import { refreshRevocations, revokeKey, rotateKey, signRepository, type SignedOutput } from "./core/publish.ts";
+import { refreshRevocations, revokeKey, rotateKey, signExistingRepository, signRepository, type SignedOutput } from "./core/publish.ts";
 import { loadState } from "./core/state.ts";
 import { initProject, TEMPLATES, templatesDir, type TemplateName } from "./commands/init.ts";
 import { serveProject } from "./commands/serve.ts";
@@ -31,6 +31,7 @@ const HELP = `shinsou-plugin ${VERSION} — Shinsou X 套件作者工具
   test [--record] [--update] [--only <名稱>] 以錄製的 HTTP fixture 執行 hook
   serve [--host 127.0.0.1|lan|<區網 IP>] [--port <埠>]   開發者用未簽章儲存庫（即時重建）
   sign [--key <名稱>] [--mirror <URL>]... [--out <目錄>]  簽署 repo/index/sidecar/撤回清單
+  sign-repo --mirror <URL>... [--key <名稱>] [--out <目錄>]  簽署既有的多套件儲存庫（repo.json/index.json/sidecars）
   refresh [--key <名稱>] [--mirror <URL>]...              重簽撤回清單（延長 expiresAt）
   revoke <sha256>... [--key <名稱>]                       撤回已發佈的版本
   rotate --to <新金鑰> [--key <舊金鑰>]                    金鑰輪替（雙簽）並以新金鑰重簽
@@ -193,6 +194,15 @@ async function main(argv: string[]): Promise<number> {
       const key = await loadKey(defaultKeyName(dir, values.key));
       printSigned(await signRepository({ projectDir: dir, key, mirrors: values.mirror, outDir: values.out, ttlSeconds }));
       console.log("把每個鏡像目錄的內容原樣上傳到對應的網址即可；.shinsou/state.json 必須一起提交。");
+      return 0;
+    }
+    case "sign-repo": {
+      const key = await loadKey(defaultKeyName(dir, values.key));
+      const r = await signExistingRepository({ repoDir: dir, key, mirrors: values.mirror ?? [], outDir: values.out, ttlSeconds });
+      printSigned(r.outputs);
+      console.log(`已簽署 ${r.packages.length} 個套件。`);
+      if (r.unchecked.length) console.log(`只核對了 SHA-256（非 Shinsou 契約，App 會略過）：${r.unchecked.join("、")}`);
+      console.log("把鏡像目錄的內容放到該網址的根目錄即可；.shinsou/state.json 必須一起提交（序號與撤回清單）。");
       return 0;
     }
     case "refresh": {

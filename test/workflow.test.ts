@@ -273,3 +273,30 @@ test("lint: browserImageOrigins, string sourceId and setFavorite follow the app'
   assert.match(text, /needs runtime permission BROWSER_IMAGES/);
   assert.ok(report.warnings.some((w) => /FAVORITE_MUTATION/.test(w.message)), JSON.stringify(report.warnings));
 });
+
+test("sign-repo signs an existing multi-package repository and refuses mismatched artifacts", async () => {
+  const { signExistingRepository } = await import("../src/core/publish.ts");
+  const dir = join(tmp(), "existing-repo");
+  initProject({ dir, template: "manga", cliVersion: "0.1.0" });
+  const built = await buildProject(dir);
+  const repoDir = built.outDir;
+  const mirror = "https://repo.example.com/plugins";
+  const k = key("community");
+  const r = await signExistingRepository({ repoDir, key: k, mirrors: [mirror], now: 1_000 });
+  assert.deepEqual(r.packages, [String(built.pkg.id)]);
+  const out = r.outputs[0].dir;
+  const pinned = { publicKey: k.publicKey, fingerprint: k.fingerprint };
+  const read = (rel: string) => JSON.parse(readFileSync(join(out, rel), "utf8"));
+  verifyEnvelope({ envelope: read("repo.json"), repository: mirror, payloadType: "repository-meta", documentId: "repo.json", pinned });
+  assert.equal(read("repo.json").payload.meta.signingKeyFingerprint, k.fingerprint);
+  verifyEnvelope({ envelope: read("index.json"), repository: mirror, payloadType: "repository-index", documentId: "index.json", pinned });
+  const sidecar = String(built.pkg.sidecarUrl);
+  verifyEnvelope({ envelope: read(sidecar), repository: mirror, payloadType: "plugin-sidecar", documentId: sidecar, pinned });
+  assert.ok(existsSync(join(out, String(built.pkg.scriptUrl))));
+
+  // Another key cannot take over a repository already signed with this one.
+  await assert.rejects(signExistingRepository({ repoDir, key: key("other"), mirrors: [mirror] }), /not this repository's key/);
+  // A script that no longer matches its index digest is never signed.
+  writeFileSync(join(repoDir, String(built.pkg.scriptUrl)), "var source = {};");
+  await assert.rejects(signExistingRepository({ repoDir, key: k, mirrors: [mirror] }), /does not match its sha256/);
+});

@@ -6,13 +6,16 @@
  * watermark per publisher), recorded in `.shinsou/state.json`.
  */
 
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { JsonObject, JsonValue } from "./canonical-json.ts";
 import { buildProject } from "./build.ts";
 import { DOCUMENT_IDS, normalizeRepositoryUrl, signEnvelope, verifyEnvelope, type PayloadType } from "./envelope.ts";
 import type { LoadedKey } from "./keystore.ts";
-import { loadManifest, repoMetaDocument, scriptUrl, sidecarUrl } from "./manifest.ts";
+import { INDEX_FORMAT, loadManifest, repoMetaDocument, scriptUrl, sidecarUrl } from "./manifest.ts";
+import { checkPackageConsistency } from "./consistency.ts";
+import { sha256Hex } from "./crypto.ts";
+import { misleadingTerm } from "./names.ts";
 import { DEFAULT_REVOCATIONS_TTL_SECONDS, keyRevokedPayload, revocationsPayload, rotationPayload, SHA256_HEX } from "./publisher.ts";
 import { loadState, nextSequence, saveState, type PublishState } from "./state.ts";
 
@@ -252,4 +255,115 @@ export function publicDirHas(projectDir: string, outDir = DEFAULT_PUBLIC_DIR): b
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+/**
+ * `sign-repo`: signs an existing, hand-maintained multi-package repository (repo.json, index.json
+ * and every sidecar it references) instead of a single `shinsou.plugin.json` project. Nothing in
+ * the repository is rewritten: each package's script must already match its index SHA-256 and
+ * byte size, and Shinsou-contract packages must pass the same index/sidecar/script consistency
+ * check as `build`. Packages of another contract (for example the legacy `shuyue` rows, which the
+ * app skips) are signed as part of the index but not checked beyond their artifact digest.
+ */
+export async function signExistingRepository(args: {
+  repoDir: string;
+  key: LoadedKey;
+  mirrors: string[];
+  outDir?: string;
+  ttlSeconds?: number;
+  now?: number;
+}): Promise<{ outputs: SignedOutput[]; packages: string[]; unchecked: string[] }> {
+  if (!args.mirrors.length) throw new Error("No mirror URL: pass --mirror <https://…> (the URL users add, without index.json)");
+  const mirrors = [...new Set(args.mirrors.map((m) => normalizeRepositoryUrl(m)))];
+  const readJson = (rel: string): JsonObject => {
+    const path = join(args.repoDir, rel);
+    if (!existsSync(path)) throw new Error(`${rel} is missing`);
+    const value = JSON.parse(readFileSync(path, "utf8"));
+    if (value && typeof value === "object" && "signature" in value && "payload" in value) {
+      throw new Error(`${rel} is already a signed envelope; sign the unsigned source files`);
+    }
+    return value as JsonObject;
+  };
+  const relPath = (value: unknown, what: string): string => {
+    const rel = String(value ?? "");
+    if (!rel || rel.startsWith("/") || rel.includes("\\") || rel.split("/").some((p) => p === ".." || p === "")) {
+      throw new Error(`${what} '${rel}' is not a safe relative path`);
+    }
+    return rel;
+  };
+
+  const repo = readJson(DOCUMENT_IDS.repo);
+  const meta = (repo.meta ?? {}) as JsonObject;
+  for (const field of ["name", "shortName", "website"] as const) {
+    if (typeof meta[field] !== "string" || !(meta[field] as string).length) throw new Error(`repo.json meta.${field} is missing`);
+  }
+  const index = readJson(DOCUMENT_IDS.index);
+  if (index.format !== INDEX_FORMAT) throw new Error(`index.json format must be ${INDEX_FORMAT}`);
+  const packages = (index.packages ?? []) as JsonObject[];
+  if (!Array.isArray(packages) || packages.length === 0) throw new Error("index.json has no packages");
+
+  const problems: string[] = [];
+  const named = (value: unknown, what: string) => {
+    const term = misleadingTerm(String(value ?? ""));
+    if (term) problems.push(`${what} '${String(value)}' uses the misleading term '${term}'`);
+  };
+  named(meta.name, "repository name");
+  named(meta.shortName, "repository shortName");
+  const docs: Doc[] = [];
+  const copy: Record<string, string> = {};
+  const ids: string[] = [];
+  const unchecked: string[] = [];
+  for (const pkg of packages) {
+    const id = String(pkg.id);
+    ids.push(id);
+    named(pkg.name, `${id} name`);
+    for (const source of (pkg.sources ?? []) as JsonObject[]) named(source.name, `${id} source name`);
+    const script = relPath(pkg.scriptUrl, `${id} scriptUrl`);
+    const scriptFile = join(args.repoDir, script);
+    if (!existsSync(scriptFile)) {
+      problems.push(`${id}: ${script} is missing`);
+      continue;
+    }
+    const scriptBytes = new Uint8Array(readFileSync(scriptFile));
+    if (sha256Hex(scriptBytes) !== pkg.sha256) problems.push(`${id}: ${script} does not match its sha256 in index.json`);
+    if (scriptBytes.length !== pkg.byteSize) problems.push(`${id}: ${script} is ${scriptBytes.length} bytes, index.json says ${String(pkg.byteSize)}`);
+    copy[script] = scriptFile;
+    if (pkg.sidecarUrl === undefined) {
+      if (pkg.contract === "shinsou") problems.push(`${id}: a Shinsou package needs a sidecarUrl`);
+      unchecked.push(id);
+      continue;
+    }
+    const sidecarRel = relPath(pkg.sidecarUrl, `${id} sidecarUrl`);
+    const sidecar = readJson(sidecarRel);
+    if (pkg.contract === "shinsou") {
+      for (const p of checkPackageConsistency({ index, pkg, sidecar, scriptBytes })) problems.push(p);
+    } else {
+      unchecked.push(id);
+    }
+    docs.push({ documentId: sidecarRel, payloadType: "plugin-sidecar", payload: sidecar });
+  }
+  if (new Set(ids).size !== ids.length) problems.push("index.json lists a package id more than once");
+  if (problems.length) throw new Error(`Repository cannot be signed:\n  - ${problems.join("\n  - ")}`);
+
+  const state = loadState(args.repoDir);
+  requireSigningKey(state, args.key);
+  const repoMeta: JsonObject = {
+    ...repo,
+    meta: { name: meta.name, shortName: meta.shortName, website: meta.website, signingKeyFingerprint: args.key.fingerprint },
+  };
+  const outputs = signDocs({
+    state,
+    key: args.key,
+    mirrors,
+    docs: [
+      { documentId: DOCUMENT_IDS.repo, payloadType: "repository-meta", payload: repoMeta },
+      { documentId: DOCUMENT_IDS.index, payloadType: "repository-index", payload: index },
+      ...docs,
+      revocationsDoc(state, { refresh: false, ttlSeconds: args.ttlSeconds ?? DEFAULT_REVOCATIONS_TTL_SECONDS, now: args.now ?? nowSeconds() }),
+    ],
+    outDir: join(args.repoDir, args.outDir ?? "signed"),
+    copy,
+  });
+  saveState(args.repoDir, state);
+  return { outputs, packages: ids, unchecked };
 }

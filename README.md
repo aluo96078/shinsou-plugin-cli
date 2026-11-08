@@ -240,6 +240,21 @@ shinsou-plugin sign --key mykey --mirror https://you.github.io/plugins --mirror 
 - 撤回清單預設有效 30 天（`--days` 可改）；剩不到一半時 `sign` 會自動延長。第一次簽章時，這把金鑰成為
   發佈者 ID（`publisherId` = 第一把金鑰的指紋，之後輪替也不變）。
 
+### 7.1 簽署既有的多套件儲存庫：`sign-repo`
+
+手工維護、一個儲存庫放多個套件（`repo.json` + `index.json` + `sidecars/` + `plugins/`）時，不需要改成
+`shinsou.plugin.json` 專案，直接在儲存庫根目錄簽署：
+
+```bash
+shinsou-plugin sign-repo --mirror https://raw.githubusercontent.com/<帳號>/<儲存庫>/refs/heads/main --key <金鑰名稱>
+```
+
+- 不會修改任何原始檔；每個套件的腳本必須符合 index 的 `sha256` 與 `byteSize`，Shinsou 契約的套件還要通過和
+  `build` 相同的 index／sidecar／腳本一致性檢查，任一不符就整個拒絕簽署。
+- 其他契約的項目（例如 App 會略過的 `shuyue`）只核對 SHA-256，仍隨 index 一起簽署。
+- 輸出在 `signed/<鏡像>/`：簽章後的 `repo.json`、`index.json`、每個 sidecar、`publisher-revocations.json`，以及腳本副本。
+  把它的內容放到該網址的根目錄即可。`.shinsou/state.json` 記錄序號與撤回清單，必須一起提交。
+
 ### 8. 發佈
 
 把 `public/<鏡像>/` 的內容原樣放到對應網址（GitHub Pages、raw、任何靜態主機）。使用者加入 `https://…/plugins`
