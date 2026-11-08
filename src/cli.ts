@@ -31,8 +31,8 @@ const HELP = `shinsou-plugin ${VERSION} — Shinsou X 套件作者工具
   test [--record] [--update] [--only <名稱>] 以錄製的 HTTP fixture 執行 hook
   serve [--host 127.0.0.1|lan|<區網 IP>] [--port <埠>]   開發者用未簽章儲存庫（即時重建）
   sign [--key <名稱>] [--mirror <URL>]... [--out <目錄>]  簽署 repo/index/sidecar/撤回清單
-  sign-repo --mirror <URL>... [--key <名稱>] [--out <目錄>]  簽署既有的多套件儲存庫（repo.json/index.json/sidecars）
-  refresh [--key <名稱>] [--mirror <URL>]...              重簽撤回清單（延長 expiresAt）
+  sign-repo --mirror <URL>... [--key <名稱>] [--out <目錄>] [--flat]  簽署既有的多套件儲存庫（repo.json/index.json/sidecars）
+  refresh [--key <名稱>] [--mirror <URL>]... [--if-due] [--flat]  重簽撤回清單（延長 expiresAt；--if-due 只在剩不到一半效期時重簽）
   revoke <sha256>... [--key <名稱>]                       撤回已發佈的版本
   rotate --to <新金鑰> [--key <舊金鑰>]                    金鑰輪替（雙簽）並以新金鑰重簽
   revoke-key [--key <名稱>]                               金鑰自我撤銷
@@ -113,6 +113,8 @@ async function main(argv: string[]): Promise<number> {
       update: { type: "boolean" },
       only: { type: "string" },
       force: { type: "boolean" },
+      flat: { type: "boolean" },
+      "if-due": { type: "boolean" },
     },
   });
   const dir = resolve(values.dir ?? (command === "init" ? positionals[0] ?? "." : "."));
@@ -198,7 +200,7 @@ async function main(argv: string[]): Promise<number> {
     }
     case "sign-repo": {
       const key = await loadKey(defaultKeyName(dir, values.key));
-      const r = await signExistingRepository({ repoDir: dir, key, mirrors: values.mirror ?? [], outDir: values.out, ttlSeconds });
+      const r = await signExistingRepository({ repoDir: dir, key, mirrors: values.mirror ?? [], outDir: values.out, ttlSeconds, flat: values.flat });
       printSigned(r.outputs);
       console.log(`已簽署 ${r.packages.length} 個套件。`);
       if (r.unchecked.length) console.log(`只核對了 SHA-256（非 Shinsou 契約，App 會略過）：${r.unchecked.join("、")}`);
@@ -207,7 +209,9 @@ async function main(argv: string[]): Promise<number> {
     }
     case "refresh": {
       const key = await loadKey(defaultKeyName(dir, values.key));
-      printSigned(refreshRevocations({ projectDir: dir, key, mirrors: values.mirror, outDir: values.out, ttlSeconds }));
+      const signed = refreshRevocations({ projectDir: dir, key, mirrors: values.mirror, outDir: values.out, ttlSeconds, flat: values.flat, onlyIfDue: values["if-due"] });
+      if (!signed.length) console.log("撤回清單還在有效期的前半，不需要重簽。");
+      printSigned(signed);
       return 0;
     }
     case "revoke": {

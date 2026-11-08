@@ -7,7 +7,7 @@
  */
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { JsonObject, JsonValue } from "./canonical-json.ts";
 import { buildProject } from "./build.ts";
 import { DOCUMENT_IDS, normalizeRepositoryUrl, signEnvelope, verifyEnvelope, type PayloadType } from "./envelope.ts";
@@ -80,11 +80,14 @@ function signDocs(args: {
   docs: Doc[];
   outDir: string;
   copy?: Record<string, string>;
+  /** Write into [outDir] itself instead of a per-mirror folder (one mirror only). */
+  flat?: boolean;
 }): SignedOutput[] {
+  if (args.flat && args.mirrors.length !== 1) throw new Error("--flat needs exactly one mirror");
   const sequences = args.docs.map((d) => nextSequence(args.state, d.documentId, d.payload));
   const outputs: SignedOutput[] = [];
   for (const mirror of args.mirrors) {
-    const dir = join(args.outDir, mirrorSlug(mirror));
+    const dir = args.flat ? args.outDir : join(args.outDir, mirrorSlug(mirror));
     const documents: SignedOutput["documents"] = [];
     args.docs.forEach((d, i) => {
       const envelope = signEnvelope({
@@ -147,7 +150,7 @@ export async function signRepository(args: {
     key: args.key,
     mirrors,
     docs,
-    outDir: join(args.projectDir, args.outDir ?? DEFAULT_PUBLIC_DIR),
+    outDir: resolve(args.projectDir, args.outDir ?? DEFAULT_PUBLIC_DIR),
     copy: { [scriptUrl(m)]: join(built.outDir, scriptUrl(m)) },
   });
   saveState(args.projectDir, state);
@@ -163,10 +166,18 @@ export function refreshRevocations(args: {
   ttlSeconds?: number;
   now?: number;
   add?: string[];
+  flat?: boolean;
+  /** Skip (return []) while more than half of the current list's lifetime remains and nothing is added. */
+  onlyIfDue?: boolean;
 }): SignedOutput[] {
   const state = loadState(args.projectDir);
   if (!state.publisherId) throw new Error("Nothing signed yet: run 'shinsou-plugin sign' first");
   requireSigningKey(state, args.key);
+  if (args.onlyIfDue && !(args.add ?? []).length) {
+    const expiresAt = state.documents[DOCUMENT_IDS.revocations]?.expiresAt;
+    const ttl = args.ttlSeconds ?? DEFAULT_REVOCATIONS_TTL_SECONDS;
+    if (expiresAt !== undefined && expiresAt - (args.now ?? nowSeconds()) > Math.floor(ttl / 2)) return [];
+  }
   for (const raw of args.add ?? []) {
     const digest = raw.toLowerCase().replace(/^sha256:/, "");
     if (!SHA256_HEX.test(digest)) throw new Error(`Not a SHA-256 hex digest: ${raw}`);
@@ -177,7 +188,8 @@ export function refreshRevocations(args: {
     key: args.key,
     mirrors: resolveMirrors(args.projectDir, args.mirrors),
     docs: [revocationsDoc(state, { refresh: true, ttlSeconds: args.ttlSeconds ?? DEFAULT_REVOCATIONS_TTL_SECONDS, now: args.now ?? nowSeconds() })],
-    outDir: join(args.projectDir, args.outDir ?? DEFAULT_PUBLIC_DIR),
+    outDir: resolve(args.projectDir, args.outDir ?? DEFAULT_PUBLIC_DIR),
+    flat: args.flat,
   });
   saveState(args.projectDir, state);
   return outputs;
@@ -242,7 +254,7 @@ export function revokeKey(args: { projectDir: string; key: LoadedKey; mirrors?: 
         payload: keyRevokedPayload({ publisherId: state.publisherId, revokedKeyFingerprint: args.key.fingerprint }),
       },
     ],
-    outDir: join(args.projectDir, args.outDir ?? DEFAULT_PUBLIC_DIR),
+    outDir: resolve(args.projectDir, args.outDir ?? DEFAULT_PUBLIC_DIR),
   });
   if (isCurrent) state.keyRevoked = true;
   saveState(args.projectDir, state);
@@ -272,6 +284,7 @@ export async function signExistingRepository(args: {
   outDir?: string;
   ttlSeconds?: number;
   now?: number;
+  flat?: boolean;
 }): Promise<{ outputs: SignedOutput[]; packages: string[]; unchecked: string[] }> {
   if (!args.mirrors.length) throw new Error("No mirror URL: pass --mirror <https://…> (the URL users add, without index.json)");
   const mirrors = [...new Set(args.mirrors.map((m) => normalizeRepositoryUrl(m)))];
@@ -361,8 +374,9 @@ export async function signExistingRepository(args: {
       ...docs,
       revocationsDoc(state, { refresh: false, ttlSeconds: args.ttlSeconds ?? DEFAULT_REVOCATIONS_TTL_SECONDS, now: args.now ?? nowSeconds() }),
     ],
-    outDir: join(args.repoDir, args.outDir ?? "signed"),
+    outDir: resolve(args.repoDir, args.outDir ?? "signed"),
     copy,
+    flat: args.flat,
   });
   saveState(args.repoDir, state);
   return { outputs, packages: ids, unchecked };

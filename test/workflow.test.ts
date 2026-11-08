@@ -294,6 +294,21 @@ test("sign-repo signs an existing multi-package repository and refuses mismatche
   verifyEnvelope({ envelope: read(sidecar), repository: mirror, payloadType: "plugin-sidecar", documentId: sidecar, pinned });
   assert.ok(existsSync(join(out, String(built.pkg.scriptUrl))));
 
+  // --flat writes straight into the output directory (a repository served from its root).
+  const { refreshRevocations } = await import("../src/core/publish.ts");
+  const flatOut = join(tmp(), "flat-root");
+  const flat = await signExistingRepository({ repoDir, key: k, mirrors: [mirror], outDir: flatOut, flat: true, now: 2_000 });
+  assert.equal(flat.outputs[0].dir, flatOut);
+  assert.ok(existsSync(join(flatOut, "index.json")) && existsSync(join(flatOut, String(built.pkg.scriptUrl))));
+  await assert.rejects(signExistingRepository({ repoDir, key: k, mirrors: [mirror, "https://mirror.example.com/p"], outDir: flatOut, flat: true }), /exactly one mirror/);
+  // --if-due re-signs only once less than half of the list's lifetime remains.
+  const day = 86_400;
+  assert.deepEqual(refreshRevocations({ projectDir: repoDir, key: k, mirrors: [mirror], outDir: flatOut, flat: true, onlyIfDue: true, now: 2_000 + 10 * day }), []);
+  const due = refreshRevocations({ projectDir: repoDir, key: k, mirrors: [mirror], outDir: flatOut, flat: true, onlyIfDue: true, now: 2_000 + 20 * day });
+  assert.equal(due.length, 1);
+  const renewed = JSON.parse(readFileSync(join(flatOut, "publisher-revocations.json"), "utf8"));
+  assert.equal(renewed.payload.expiresAt, 2_000 + 20 * day + 30 * day);
+
   // Another key cannot take over a repository already signed with this one.
   await assert.rejects(signExistingRepository({ repoDir, key: key("other"), mirrors: [mirror] }), /not this repository's key/);
   // A script that no longer matches its index digest is never signed.
