@@ -23,13 +23,7 @@ npm install --save-dev @shinsou/plugin
 npm install --global @shinsou/plugin
 ```
 
-> 目前尚未發佈到 npm，請直接從 GitHub 安裝（安裝時會自動建置）：
-
-```bash
-npm install --global github:aluo96078/shinsou-plugin-cli
-```
-
-或固定在某個版本（commit 或 tag）：
+要試用尚未發佈的版本，可以直接從 GitHub 安裝某個 commit 或 tag（安裝時會自動建置）：
 
 ```bash
 npm install --save-dev github:aluo96078/shinsou-plugin-cli#<commit>
