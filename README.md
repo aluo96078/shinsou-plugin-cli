@@ -330,4 +330,7 @@ npm run typecheck && npm run build   # 輸出 dist/cli.js
 - `contentHostSuffixes` 與 `COOKIE_READ` 已由 App 支援；內建的 Public Suffix List 是固定版本，與 App 版本不同步時
   （App 更新清單後），某個後綴可能在新版變成公開後綴而被 App 拒絕安裝；更新時請同步替換 `data/public_suffix_list.dat`。
 - 一個專案只產生一個套件；同一發佈者的多個套件目前要分開的儲存庫（或自行合併 index）。
-- 授權條款尚未決定（`package.json` 暫為 `UNLICENSED`），發佈到 npm 前需要決定。
+
+## 授權
+
+[MIT](LICENSE)

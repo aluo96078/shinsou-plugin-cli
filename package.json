@@ -2,7 +2,18 @@
   "name": "@shinsou/plugin",
   "version": "0.1.0",
   "description": "Shinsou X 套件作者工具：金鑰、建置、檢查、測試、開發伺服器與簽章發佈。",
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aluo96078/shinsou-plugin-cli.git"
+  },
+  "homepage": "https://github.com/aluo96078/shinsou-plugin-cli#readme",
+  "bugs": {
+    "url": "https://github.com/aluo96078/shinsou-plugin-cli/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "shinsou-plugin": "dist/cli.js"
